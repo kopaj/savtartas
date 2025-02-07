@@ -28,8 +28,7 @@ class LaneDetect(Node):
         self.bridge = CvBridge()
         # Új publisher a középpont számára
         self.center_pub = self.create_publisher(Float32, '/lane_center', 10)
-        # exponenciális smoothing-hoz használjuk
-        self.previous_center = None
+        # középvonal simításhoz használjuk
         self.center_history = deque(maxlen=5)  # Tárolja az utolsó 5 középvonalat
         
 
@@ -86,7 +85,7 @@ class LaneDetect(Node):
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                if length > 50:  # Csak a 30 pixelnél hosszabb vonalakat tartjuk meg
+                if length > 50:  # Csak a 50 pixelnél hosszabb vonalakat tartjuk meg
                     slope = (y2 - y1) / (x2 - x1) if x2 != x1 else np.inf
                     if abs(slope) > 0.1:  # Meredekebb vonalakat fogadunk csak el
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
@@ -105,12 +104,9 @@ class LaneDetect(Node):
         elif left_x:
             left_avg = np.mean(left_x)
             center = (left_avg + (width * 1.5)) / (2 + (1-abs(slope)))
-            #center = left_avg + np.mean(width * (1 - abs(slope)))
         elif right_x:
-            #left_avg = 0
             right_avg = np.mean(right_x)
             center = right_avg / (2 + (1-abs(slope)))
-            #center = right_avg - np.mean(width * (1 - abs(slope)))
 
         # Apply exponential smoothing and averaging using the deque
         self.center_history.append(center)
