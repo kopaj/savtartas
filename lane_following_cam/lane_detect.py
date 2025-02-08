@@ -15,6 +15,7 @@ class LaneDetect(Node):
         # parameters
         self.declare_parameter('raw_image', False)
         self.declare_parameter('image_topic', '/image_raw')
+        self.declare_parameter('debug', True)
         img_topic = self.get_parameter('image_topic').value
         if self.get_parameter('raw_image').value:
             self.sub1 = self.create_subscription(Image, img_topic, self.raw_listener, 10)
@@ -25,7 +26,9 @@ class LaneDetect(Node):
             self.sub2  # prevent unused variable warning
             self.get_logger().info(f'lane_detect subscribed to compressed image topic: {img_topic}')
         self.pub1 = self.create_publisher(Image, '/lane_img', 10)
+        self.pub2 = self.create_publisher(Twist, '/cmd_vel', 10)
         self.bridge = CvBridge()
+        self.debug = self.get_parameter('debug').value
         # Új publisher a középpont számára
         self.center_pub = self.create_publisher(Float32, '/lane_center', 10)
         # középvonal simításhoz használjuk
@@ -71,8 +74,8 @@ class LaneDetect(Node):
         polygon = np.array([[
             (0, height),
             (width, height),
-            (width, int(height * 0.6)),        # nemet mcap-hez: 0.45   f1tenth-hez: 0.6
-            (0, int(height * 0.6))              # nemet mcap-hez 0.45   f1tenth-hez: 0.6
+            (width, int(height * 0.45)),        # nemet mcap-hez: 0.45   f1tenth-hez: 0.6
+            (0, int(height * 0.45))              # nemet mcap-hez 0.45   f1tenth-hez: 0.6
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -95,7 +98,9 @@ class LaneDetect(Node):
                             right_x.extend([x1, x2])
 
         # Calculate the center with fallback to default if one side is missing
+        
         center = width / 2  # Default center
+        twist = Twist()
 
         if left_x and right_x:
             left_avg = np.mean(left_x)
@@ -112,12 +117,40 @@ class LaneDetect(Node):
         self.center_history.append(center)
         smoothed_center = np.mean(self.center_history)
         
+        # Twist logika
+
+        if not left_x and not right_x:
+            # If there are no lines detected, slow the robot
+            twist.angular.z = 0.0
+            twist.linear.x = 0.05
+            self.pub2.publish(twist)
+        else:
+            twist.linear.x = 0.2
+            #   sebesseg (m/s)
+            twist.angular.z = 0.005 *  ((-1) * (smoothed_center - (width/2)))
+            #   szogsebesseg(rad/sec)       balra forgás -> pozitiv ertekkel, jobbra forgás -> negativ ertekkel
+            self.pub2.publish(twist)
+
          # Rajzolás az új simított középponttal
         cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * 0.6)), (255, 0, 0), 2)
         cv2.circle(line_image, (int(smoothed_center), int(height / 2)), 10, (255, 0, 0), -1)
 
+        # Display the twist.angular.z value on the image and direction (left or right or straight)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        if twist.angular.z > 0.01:
+            text = 'Left'
+        elif twist.angular.z < -0.01:
+            text = 'Right'
+        else:
+            text = 'Straight'
+        cv2.putText(line_image, f'{text} {abs(twist.angular.z):.2f}', (10, 30), font, 1, (60, 40, 200), 2, cv2.LINE_AA)
+        
         # Combine the original image with the line image
-        combined_image = cv2.addWeighted(image, 0.25, line_image, 1, 1)
+        if self.debug:
+            combined_image = cv2.addWeighted(image, 0.25, line_image, 1, 1)
+        else: 
+            combined_image = lane_image
 
         # Publish the center as a Float32 message
         center_msg = Float32()
