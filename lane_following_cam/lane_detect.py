@@ -29,12 +29,11 @@ class LaneDetect(Node):
         self.pub2 = self.create_publisher(Twist, '/cmd_vel', 10)
         self.bridge = CvBridge()
         self.debug = self.get_parameter('debug').value
-        # Új publisher a középpont számára
+        # New publisher for lane center
         self.center_pub = self.create_publisher(Float32, '/lane_center', 10)
-        # középvonal simításhoz használjuk
-        self.center_history = deque(maxlen=5)  # Tárolja az utolsó 5 középvonalat
+        # For center smoothing
+        self.center_history = deque(maxlen=5)  # Stores the previous five measured centers
         
-
     def raw_listener(self, msg):
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -61,21 +60,37 @@ class LaneDetect(Node):
         self.pub1.publish(ros_image)
 
 
-    def detect_lanes(self, image):
+    def detect_lanes(self, image): 
+        # Adjust brightness until only lanes are visible
+        imageBrighnessLow = cv2.convertScaleAbs(image, alpha=1, beta=-40)       
+
+        hsv = cv2.cvtColor(imageBrighnessLow, cv2.COLOR_BGR2HSV)
+
+        # Recognise lanes based on color (white, yellow)
+        lower_white = np.array([0, 0, 200], dtype=np.uint8)
+        upper_white = np.array([180, 25, 255], dtype=np.uint8)
+        mask_white = cv2.inRange(hsv, lower_white, upper_white)
+
+        lower_yellow = np.array([20, 100, 100], dtype=np.uint8)
+        upper_yellow = np.array([30, 255, 255], dtype=np.uint8)
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        mask = cv2.bitwise_or(mask_white, mask_yellow)
+        filtered_image = cv2.bitwise_and(image, image, mask=mask)
+
         # Convert to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        # Apply Gaussian blur
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        gray = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2GRAY)
+
         # Detect edges using Canny
-        edges = cv2.Canny(blur, 50, 150)
-        # Define a region of interest
+        edges = cv2.Canny(gray, 50, 150)
+        # Defining ROI
         height, width = edges.shape
         mask = np.zeros_like(edges)
         polygon = np.array([[
-            (0, height),
+            (1, height),
             (width, height),
-            (width, int(height * 0.45)),        # nemet mcap-hez: 0.45   f1tenth-hez: 0.6
-            (0, int(height * 0.45))              # nemet mcap-hez 0.45   f1tenth-hez: 0.6
+            (width, int(height * 0.45)),         #big_track_munchen_only_camera_a.mcap: 0.45    f1tenth: 0.6
+            (1, int(height * 0.45))              
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -84,23 +99,23 @@ class LaneDetect(Node):
         line_image = np.zeros_like(image)
         left_x = []
         right_x = []
+
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                if length > 50:  # Csak a 50 pixelnél hosszabb vonalakat tartjuk meg
+                if length > 80:  # Only accepting lines that measure over 80 px in length
                     slope = (y2 - y1) / (x2 - x1) if x2 != x1 else np.inf
-                    if abs(slope) > 0.1:  # Meredekebb vonalakat fogadunk csak el
+                    if 0.1 < abs(slope) < 5.0:  # Filter based on slope
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
                         if x1 < width / 2 and x2 < width / 2:
                             left_x.extend([x1, x2])
                         elif x1 > width / 2 and x2 > width / 2:
                             right_x.extend([x1, x2])
 
-        # Calculate the center with fallback to default if one side is missing
+        # Calculating the center
         
         center = width / 2  # Default center
-        twist = Twist()
 
         if left_x and right_x:
             left_avg = np.mean(left_x)
@@ -108,7 +123,7 @@ class LaneDetect(Node):
             center = (left_avg + right_avg) / 2
         elif left_x:
             left_avg = np.mean(left_x)
-            center = (left_avg + (width * 1.5)) / (2 + (1-abs(slope)))
+            center = (left_avg + (width * 1.6)) / (2 + (1-abs(slope)))
         elif right_x:
             right_avg = np.mean(right_x)
             center = right_avg / (2 + (1-abs(slope)))
@@ -117,7 +132,9 @@ class LaneDetect(Node):
         self.center_history.append(center)
         smoothed_center = np.mean(self.center_history)
         
-        # Twist logika
+        # Twist logic
+
+        twist = Twist()
 
         if not left_x and not right_x:
             # If there are no lines detected, slow the robot
@@ -126,12 +143,12 @@ class LaneDetect(Node):
             self.pub2.publish(twist)
         else:
             twist.linear.x = 0.2
-            #   sebesseg (m/s)
+            #   velocity (m/s)
             twist.angular.z = -0.005 * (smoothed_center - (width/2))
-            #   szogsebesseg(rad/sec)       balra forgás -> pozitiv ertekkel, jobbra forgás -> negativ ertekkel
+            #   angular velocity(rad/s)       turn left -> positive value, turn right -> negative value
             self.pub2.publish(twist)
 
-         # Rajzolás az új simított középponttal
+         # Displaying center of lane using smoothed center
         cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * 0.6)), (255, 0, 0), 2)
         cv2.circle(line_image, (int(smoothed_center), int(height / 2)), 10, (255, 0, 0), -1)
 
@@ -150,7 +167,7 @@ class LaneDetect(Node):
         if self.debug:
             combined_image = cv2.addWeighted(image, 0.25, line_image, 1, 1)
         else: 
-            combined_image = lane_image
+            combined_image = line_image
 
         # Publish the center as a Float32 message
         center_msg = Float32()
