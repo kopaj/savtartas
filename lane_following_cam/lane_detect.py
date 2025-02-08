@@ -127,7 +127,7 @@ class LaneDetect(Node):
         else:
             twist.linear.x = 0.2
             #   sebesseg (m/s)
-            twist.angular.z = 0.005 *  ((-1) * (smoothed_center - (width/2)))
+            twist.angular.z = -0.005 * (smoothed_center - (width/2))
             #   szogsebesseg(rad/sec)       balra forgás -> pozitiv ertekkel, jobbra forgás -> negativ ertekkel
             self.pub2.publish(twist)
 
