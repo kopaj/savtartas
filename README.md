@@ -81,8 +81,4 @@ This bag file contains `/camera/color/image_raw` topic, so easiest way to use is
 
 ``` r
 ros2 launch lane_following_cam example_bag.launch.py
-```# savtartas
-# savtartas
-# savtartas
-# savtartas
-# savtartas
+```
