@@ -8,6 +8,7 @@ from cv_bridge import CvBridge
 from rclpy.node import Node
 import rclpy
 from collections import deque
+from filterpy.kalman import KalmanFilter
 
 class LaneDetect(Node):
     def __init__(self):
@@ -31,9 +32,15 @@ class LaneDetect(Node):
         self.debug = self.get_parameter('debug').value
         # New publisher for lane center
         self.center_pub = self.create_publisher(Float32, '/lane_center', 10)
-        # For center smoothing
-        self.center_history = deque(maxlen=5)  # Stores the previous five measured centers
-        
+
+        self.kf = KalmanFilter(dim_x=2, dim_z=1)  # 2 state variables (position, velocity)
+        self.kf.x = np.array([0, 0])  # Initial state: [position, velocity]
+        self.kf.F = np.array([[1, 1], [0, 1]])  # State transition matrix
+        self.kf.H = np.array([[1, 0]])  # Observation matrix
+        self.kf.P *= 1000  # Large initial uncertainty
+        self.kf.R = 10  # Measurement noise (adjust for sensitivity). Higher value → less trust in measurements (smoother but slower)
+        self.kf.Q = np.array([[0.01, 0], [0, 0.5]])  # Process noise (adjust for sensitivity). Higher value → faster response but can be more unstable
+
     def raw_listener(self, msg):
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -68,7 +75,7 @@ class LaneDetect(Node):
 
         # Recognise lanes based on color (white, yellow)
         lower_white = np.array([0, 0, 200], dtype=np.uint8)
-        upper_white = np.array([180, 25, 255], dtype=np.uint8)
+        upper_white = np.array([180, 10, 255], dtype=np.uint8)      #change saturation, so it only recognises lanes
         mask_white = cv2.inRange(hsv, lower_white, upper_white)
 
         lower_yellow = np.array([20, 100, 100], dtype=np.uint8)
@@ -80,17 +87,16 @@ class LaneDetect(Node):
 
         # Convert to grayscale
         gray = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2GRAY)
-
         # Detect edges using Canny
-        edges = cv2.Canny(gray, 50, 150)
+        edges = cv2.Canny(gray, 75, 150)
         # Defining ROI
         height, width = edges.shape
         mask = np.zeros_like(edges)
         polygon = np.array([[
-            (1, height),
+            (0, height),
             (width, height),
             (width, int(height * 0.45)),         #big_track_munchen_only_camera_a.mcap: 0.45    f1tenth: 0.6
-            (1, int(height * 0.45))              
+            (0, int(height * 0.45))              
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -104,7 +110,7 @@ class LaneDetect(Node):
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                if length > 80:  # Only accepting lines that measure over 80 px in length
+                if length > 60:  # Only accepting lines that measure over 60 px in length
                     slope = (y2 - y1) / (x2 - x1) if x2 != x1 else np.inf
                     if 0.1 < abs(slope) < 5.0:  # Filter based on slope
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
@@ -114,7 +120,6 @@ class LaneDetect(Node):
                             right_x.extend([x1, x2])
 
         # Calculating the center
-        
         center = width / 2  # Default center
 
         if left_x and right_x:
@@ -128,10 +133,11 @@ class LaneDetect(Node):
             right_avg = np.mean(right_x)
             center = right_avg / (2 + (1-abs(slope)))
 
-        # Apply exponential smoothing and averaging using the deque
-        self.center_history.append(center)
-        smoothed_center = np.mean(self.center_history)
-        
+        # Applying the Kalman filter
+        self.kf.predict()  # Prediction step
+        self.kf.update(np.array([center]))  # Update with the new measurement
+        smoothed_center = self.kf.x[0]  # Get the filtered (smoothed) center position
+
         # Twist logic
 
         twist = Twist()
@@ -144,7 +150,7 @@ class LaneDetect(Node):
         else:
             twist.linear.x = 0.2
             #   velocity (m/s)
-            twist.angular.z = -0.005 * (smoothed_center - (width/2))
+            twist.angular.z = -0.0025 * (smoothed_center - (width/2))
             #   angular velocity(rad/s)       turn left -> positive value, turn right -> negative value
             self.pub2.publish(twist)
 
