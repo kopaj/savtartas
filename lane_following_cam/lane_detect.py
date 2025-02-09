@@ -41,6 +41,9 @@ class LaneDetect(Node):
         self.kf.R = 10  # Measurement noise (adjust for sensitivity). Higher value → less trust in measurements (smoother but slower)
         self.kf.Q = np.array([[0.01, 0], [0, 0.5]])  # Process noise (adjust for sensitivity). Higher value → faster response but can be more unstable
 
+        # For extra center smoothing
+        self.center_history = deque(maxlen=3)  # Adjust smoothness
+
     def raw_listener(self, msg):
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -69,7 +72,7 @@ class LaneDetect(Node):
 
     def detect_lanes(self, image): 
         # Adjust brightness until only lanes are visible
-        imageBrighnessLow = cv2.convertScaleAbs(image, alpha=1, beta=-40)       
+        imageBrighnessLow = cv2.convertScaleAbs(image, alpha=1, beta=-40)
 
         hsv = cv2.cvtColor(imageBrighnessLow, cv2.COLOR_BGR2HSV)
 
@@ -96,7 +99,7 @@ class LaneDetect(Node):
             (0, height),
             (width, height),
             (width, int(height * 0.45)),         #big_track_munchen_only_camera_a.mcap: 0.45    f1tenth: 0.6
-            (0, int(height * 0.45))              
+            (0, int(height * 0.45))
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -128,14 +131,20 @@ class LaneDetect(Node):
             center = (left_avg + right_avg) / 2
         elif left_x:
             left_avg = np.mean(left_x)
-            center = (left_avg + (width * 1.6)) / (2 + (1-abs(slope)))
+            center = (left_avg + width)  / 2 
+            center = center + ((width/5) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size
         elif right_x:
             right_avg = np.mean(right_x)
-            center = right_avg / (2 + (1-abs(slope)))
+            center = right_avg / 2 
+            center = center - ((width/5) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size
+
+        # Averaging the last few measured centers
+        self.center_history.append(center)
+        deque_center = np.mean(self.center_history)
 
         # Applying the Kalman filter
         self.kf.predict()  # Prediction step
-        self.kf.update(np.array([center]))  # Update with the new measurement
+        self.kf.update(np.array([deque_center]))  # Update with the new measurement
         smoothed_center = self.kf.x[0]  # Get the filtered (smoothed) center position
 
         # Twist logic
