@@ -65,8 +65,8 @@ ros2 launch lane_following_cam robot_compressed1.launch.py
 
 ### Start the camera
 
-``` r
-ros2 run usb_cam usb_cam_node_exe --ros-args --params-file ~/ros2_ws/src/drivers/usb_cam-ros2/config/params.yaml
+``` r 
+~/ros2_ws/src/lane_following_cam/shell/start_drivers.sh
 ```
 
 ## Use ROS 2 bag (mcap)
