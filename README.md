@@ -66,7 +66,7 @@ ros2 launch lane_following_cam robot_compressed1.launch.py
 ### Start the camera
 
 ``` r 
-~/ros2_ws/src/lane_following_cam/shell/start_drivers.sh
+~/ros2_ws/src/savtartas/shell/start_drivers.sh
 ```
 
 ## Use ROS 2 bag (mcap)
