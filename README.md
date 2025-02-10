@@ -13,7 +13,7 @@ It is assumed that the workspace is `~/ros2_ws/`.
 cd ~/ros2_ws/src
 ```
 ``` r
-git clone https://github.com/robotverseny/lane_following_cam
+git clone https://github.com/kopaj/savtartas
 ```
 
 ### Build ROS 2 packages
