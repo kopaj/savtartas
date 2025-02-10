@@ -10,6 +10,10 @@ import rclpy
 from collections import deque
 from filterpy.kalman import KalmanFilter
 
+#runde: ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=30 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5
+#f1tenth: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.6 divisor:=7.5
+#munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=5.0
+
 class LaneDetect(Node):
     def __init__(self):
         super().__init__('lane_detect')
@@ -17,6 +21,18 @@ class LaneDetect(Node):
         self.declare_parameter('raw_image', False)
         self.declare_parameter('image_topic', '/image_raw')
         self.declare_parameter('debug', True)
+        self.declare_parameter('brightness', -10)
+        self.declare_parameter('multiplier_bottom', 1.0)
+        self.declare_parameter('multiplier_top', 0.45)
+        self.declare_parameter('divisor', 5.0)
+        self.declare_parameter('saturation', 10)
+        
+        # Get parameter values
+        self.brightness = self.get_parameter('brightness').value
+        self.multiplier_bottom = self.get_parameter('multiplier_bottom').value
+        self.multiplier_top = self.get_parameter('multiplier_top').value
+        self.divisor = self.get_parameter('divisor').value
+        self.saturation = self.get_parameter('saturation').value
         img_topic = self.get_parameter('image_topic').value
         if self.get_parameter('raw_image').value:
             self.sub1 = self.create_subscription(Image, img_topic, self.raw_listener, 10)
@@ -72,13 +88,13 @@ class LaneDetect(Node):
 
     def detect_lanes(self, image): 
         # Adjust brightness until lanes are visible
-        imageBrighness = cv2.convertScaleAbs(image, alpha=1, beta=-10)
+        imageBrightness = cv2.convertScaleAbs(image, alpha=1, beta=self.brightness)
         
-        hsv = cv2.cvtColor(imageBrighness, cv2.COLOR_BGR2HSV)       #hsv doesnt work on runde mcap
+        hsv = cv2.cvtColor(imageBrightness, cv2.COLOR_BGR2HSV)       #hsv doesnt work on runde mcap
         
         # Recognise lanes based on color (white, yellow)
         lower_white = np.array([0, 0, 200], dtype=np.uint8)
-        upper_white = np.array([180, 10, 255], dtype=np.uint8)      #change saturation, so it only recognises lanes
+        upper_white = np.array([180, self.saturation, 255], dtype=np.uint8)      #change saturation, so it only recognises lanes
         mask_white = cv2.inRange(hsv, lower_white, upper_white)
 
         lower_yellow = np.array([20, 100, 100], dtype=np.uint8)
@@ -96,14 +112,11 @@ class LaneDetect(Node):
         height, width = edges.shape
         mask = np.zeros_like(edges)
         
-        multiplier_bottom = 1       #runde: 0.8     other: 1
-        multiplier_top = 0.45       #big_track_munchen_only_camera_a.mcap: 0.45 f1tenth: 0.6 runde: 0.65
-        
         polygon = np.array([[
-            (0, int(height * multiplier_bottom)),              
-            (width, int(height * multiplier_bottom)),
-            (width, int(height * multiplier_top)),
-            (0, int(height * multiplier_top))
+            (0, int(height * self.multiplier_bottom)),          #runde: 0.8     other: 1    
+            (width, int(height * self.multiplier_bottom)),
+            (width, int(height * self.multiplier_top)),              #big_track_munchen_only_camera_a.mcap: 0.45 f1tenth: 0.6 runde: 0.65
+            (0, int(height * self.multiplier_top))
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -139,8 +152,6 @@ class LaneDetect(Node):
         # Calculating the center
         center = width / 2          # Default center
 
-        diviser = 5                 # runde, f1tenth: 7,5        other: 5
-
         if left_x and right_x:
             left_avg = np.mean(left_x)
             right_avg = np.mean(right_x)
@@ -148,11 +159,11 @@ class LaneDetect(Node):
         elif left_x:
             left_avg = np.mean(left_x)
             center = (left_avg + width) / 2 
-            center = center + ((width/diviser) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size     runde: 7.5      other:5
-        elif right_x:
+            center = center + ((width/self.divisor) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size     runde: 7.5      other:5
+        elif right_x:                     # runde, f1tenth: 7,5        other: 5
             right_avg = np.mean(right_x)
             center = right_avg / 2 
-            center = center - ((width/diviser) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size     runde: 7.5      other:5
+            center = center - ((width/self.divisor) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size     runde: 7.5      other:5
 
         # Averaging the last few measured centers
         self.center_history.append(center)
