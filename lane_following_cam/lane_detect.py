@@ -33,16 +33,16 @@ class LaneDetect(Node):
         # New publisher for lane center
         self.center_pub = self.create_publisher(Float32, '/lane_center', 10)
 
-        self.kf = KalmanFilter(dim_x=2, dim_z=1)  # 2 state variables (position, velocity)
-        self.kf.x = np.array([0, 0])  # Initial state: [position, velocity]
-        self.kf.F = np.array([[1, 1], [0, 1]])  # State transition matrix
-        self.kf.H = np.array([[1, 0]])  # Observation matrix
-        self.kf.P *= 1000  # Large initial uncertainty
-        self.kf.R = 10  # Measurement noise (adjust for sensitivity). Higher value → less trust in measurements (smoother but slower)
-        self.kf.Q = np.array([[0.01, 0], [0, 0.5]])  # Process noise (adjust for sensitivity). Higher value → faster response but can be more unstable
+        self.kf = KalmanFilter(dim_x=2, dim_z=1)        # 2 state variables (position, velocity)
+        self.kf.x = np.array([0, 0])                    # Initial state: [position, velocity]
+        self.kf.F = np.array([[1, 1], [0, 1]])          # State transition matrix
+        self.kf.H = np.array([[1, 0]])                  # Observation matrix
+        self.kf.P *= 1000                               # Large initial uncertainty
+        self.kf.R = 10                                  # Measurement noise (adjust for sensitivity). Higher value → less trust in measurements (smoother but slower)
+        self.kf.Q = np.array([[0.01, 0], [0, 0.5]])     # Process noise (adjust for sensitivity). Higher value → faster response but can be more unstable
 
         # For extra center smoothing
-        self.center_history = deque(maxlen=3)  # Adjust smoothness
+        self.center_history = deque(maxlen=3)           # Adjust smoothness
 
     def raw_listener(self, msg):
         # Convert ROS Image message to OpenCV image
@@ -71,11 +71,11 @@ class LaneDetect(Node):
 
 
     def detect_lanes(self, image): 
-        # Adjust brightness until only lanes are visible
-        imageBrighnessLow = cv2.convertScaleAbs(image, alpha=1, beta=-40)
-
-        hsv = cv2.cvtColor(imageBrighnessLow, cv2.COLOR_BGR2HSV)
-
+        # Adjust brightness until lanes are visible
+        imageBrighness = cv2.convertScaleAbs(image, alpha=1, beta=-10)
+        
+        hsv = cv2.cvtColor(imageBrighness, cv2.COLOR_BGR2HSV)       #hsv doesnt work on runde mcap
+        
         # Recognise lanes based on color (white, yellow)
         lower_white = np.array([0, 0, 200], dtype=np.uint8)
         upper_white = np.array([180, 10, 255], dtype=np.uint8)      #change saturation, so it only recognises lanes
@@ -87,7 +87,7 @@ class LaneDetect(Node):
 
         mask = cv2.bitwise_or(mask_white, mask_yellow)
         filtered_image = cv2.bitwise_and(image, image, mask=mask)
-
+        
         # Convert to grayscale
         gray = cv2.cvtColor(filtered_image, cv2.COLOR_BGR2GRAY)
         # Detect edges using Canny
@@ -95,11 +95,15 @@ class LaneDetect(Node):
         # Defining ROI
         height, width = edges.shape
         mask = np.zeros_like(edges)
+        
+        multiplier_bottom = 1       #runde: 0.8     other: 1
+        multiplier_top = 0.45       #big_track_munchen_only_camera_a.mcap: 0.45 f1tenth: 0.6 runde: 0.65
+        
         polygon = np.array([[
-            (0, height),
-            (width, height),
-            (width, int(height * 0.45)),         #big_track_munchen_only_camera_a.mcap: 0.45    f1tenth: 0.6
-            (0, int(height * 0.45))
+            (0, int(height * multiplier_bottom)),              
+            (width, int(height * multiplier_bottom)),
+            (width, int(height * multiplier_top)),
+            (0, int(height * multiplier_top))
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
@@ -109,21 +113,33 @@ class LaneDetect(Node):
         left_x = []
         right_x = []
 
+        if len(self.center_history) == 0:
+            check_center = width / 2                            #Initializing a default value for center if the deque is empty
+        else:
+            deque_center = np.mean(self.center_history)         #If not, we calculate a center using the last few cennters
+            
+            self.kf.predict()                                   #And we predict
+            self.kf.update(np.array([deque_center]))
+            check_center = self.kf.x[0]
+            
+
         if lines is not None:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                if length > 60:  # Only accepting lines that measure over 60 px in length
+                if length > 60:                                                     # Only accepting lines that measure over 60 px in length
                     slope = (y2 - y1) / (x2 - x1) if x2 != x1 else np.inf
                     if 0.1 < abs(slope) < 5.0:  # Filter based on slope
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
-                        if x1 < width / 2 and x2 < width / 2:
+                        if x1 < check_center and x2 < check_center:                 # If the turn is so steep, that it enters the other side of the screen, we account for it here
                             left_x.extend([x1, x2])
-                        elif x1 > width / 2 and x2 > width / 2:
+                        elif x1 > check_center and x2 > check_center:
                             right_x.extend([x1, x2])
 
         # Calculating the center
-        center = width / 2  # Default center
+        center = width / 2          # Default center
+
+        diviser = 5                 # runde, f1tenth: 7,5        other: 5
 
         if left_x and right_x:
             left_avg = np.mean(left_x)
@@ -131,12 +147,12 @@ class LaneDetect(Node):
             center = (left_avg + right_avg) / 2
         elif left_x:
             left_avg = np.mean(left_x)
-            center = (left_avg + width)  / 2 
-            center = center + ((width/5) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size
+            center = (left_avg + width) / 2 
+            center = center + ((width/diviser) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size     runde: 7.5      other:5
         elif right_x:
             right_avg = np.mean(right_x)
             center = right_avg / 2 
-            center = center - ((width/5) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size
+            center = center - ((width/diviser) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size     runde: 7.5      other:5
 
         # Averaging the last few measured centers
         self.center_history.append(center)
@@ -144,8 +160,8 @@ class LaneDetect(Node):
 
         # Applying the Kalman filter
         self.kf.predict()  # Prediction step
-        self.kf.update(np.array([deque_center]))  # Update with the new measurement
-        smoothed_center = self.kf.x[0]  # Get the filtered (smoothed) center position
+        self.kf.update(np.array([deque_center]))        # Update with the new measurement
+        smoothed_center = self.kf.x[0]                  # Get the filtered (smoothed) center position
 
         # Twist logic
 
@@ -163,7 +179,7 @@ class LaneDetect(Node):
             #   angular velocity(rad/s)       turn left -> positive value, turn right -> negative value
             self.pub2.publish(twist)
 
-         # Displaying center of lane using smoothed center
+        # Displaying center of lane using smoothed center
         cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * 0.6)), (255, 0, 0), 2)
         cv2.circle(line_image, (int(smoothed_center), int(height / 2)), 10, (255, 0, 0), -1)
 
@@ -180,7 +196,7 @@ class LaneDetect(Node):
         
         # Combine the original image with the line image
         if self.debug:
-            combined_image = cv2.addWeighted(image, 0.25, line_image, 1, 1)
+            combined_image = cv2.addWeighted(image, 0.5, line_image, 1, 1)
         else: 
             combined_image = line_image
 
