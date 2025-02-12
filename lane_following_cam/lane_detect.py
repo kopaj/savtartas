@@ -12,7 +12,7 @@ from filterpy.kalman import KalmanFilter
 
 #runde: ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=30 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5
 #f1tenth: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.6 divisor:=7.5
-#munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=5.0
+#munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=3.0
 
 class LaneDetect(Node):
     def __init__(self):
@@ -24,7 +24,7 @@ class LaneDetect(Node):
         self.declare_parameter('brightness', -10)
         self.declare_parameter('multiplier_bottom', 1.0)
         self.declare_parameter('multiplier_top', 0.45)
-        self.declare_parameter('divisor', 5.0)
+        self.declare_parameter('divisor', 3.0)
         self.declare_parameter('saturation', 10)
         
         # Get parameter values
@@ -84,7 +84,6 @@ class LaneDetect(Node):
         ros_image = self.bridge.cv2_to_imgmsg(lane_image, 'bgr8')
         # Publish the image
         self.pub1.publish(ros_image)
-
 
     def detect_lanes(self, image): 
         # Adjust brightness until lanes are visible
@@ -158,12 +157,12 @@ class LaneDetect(Node):
             center = (left_avg + right_avg) / 2
         elif left_x:
             left_avg = np.mean(left_x)
-            center = (left_avg + width) / 2 
-            center = center + ((width/self.divisor) * (1 - (abs(center - left_avg)/width)))    # Adjust first value to lane size     runde: 7.5      other:5
-        elif right_x:                     # runde, f1tenth: 7,5        other: 5
+            center = (left_avg + width) / 2
+            center = center + ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - left_avg)/width)))    # Adjust divisor to lane size
+        elif right_x:
             right_avg = np.mean(right_x)
-            center = right_avg / 2 
-            center = center - ((width/self.divisor) * (1 - (abs(center - right_avg)/width)))   # Adjust first value to lane size     runde: 7.5      other:5
+            center = right_avg / 2
+            center = center - ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - right_avg)/width)))   # Adjust divisor to lane size
 
         # Averaging the last few measured centers
         self.center_history.append(center)
@@ -191,8 +190,8 @@ class LaneDetect(Node):
             self.pub2.publish(twist)
 
         # Displaying center of lane using smoothed center
-        cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * 0.6)), (255, 0, 0), 2)
-        cv2.circle(line_image, (int(smoothed_center), int(height / 2)), 10, (255, 0, 0), -1)
+        cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * (self.multiplier_top + 0.1))), (255, 0, 0), 2)
+        cv2.circle(line_image, (int(smoothed_center), int(height * self.multiplier_top)), 10, (255, 0, 0), -1)
 
         # Display the twist.angular.z value on the image and direction (left or right or straight)
 
