@@ -10,6 +10,7 @@ def generate_launch_description():
         DeclareLaunchArgument('multiplier_top', default_value='0.45'),
         DeclareLaunchArgument('divisor', default_value='5.0'),
         DeclareLaunchArgument('saturation', default_value='10'),
+        DeclareLaunchArgument('cam_align', default_value='0'),
         
         Node(
             package='lane_following_cam',
@@ -21,7 +22,9 @@ def generate_launch_description():
                 'brightness': LaunchConfiguration('brightness'),
                 'multiplier_bottom': LaunchConfiguration('multiplier_bottom'),
                 'multiplier_top': LaunchConfiguration('multiplier_top'),
-                'divisor': LaunchConfiguration('divisor')
+                'divisor': LaunchConfiguration('divisor'),
+                'saturation': LaunchConfiguration('saturation'),
+                'cam_align': LaunchConfiguration('cam_align')
             }],
         ),
     ])

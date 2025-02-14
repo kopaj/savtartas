@@ -10,7 +10,7 @@ import rclpy
 from collections import deque
 from filterpy.kalman import KalmanFilter
 
-#runde: ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=30 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5
+#runde:   ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=30 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-40
 #f1tenth: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.6 divisor:=7.5
 #munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=3.0
 
@@ -26,6 +26,7 @@ class LaneDetect(Node):
         self.declare_parameter('multiplier_top', 0.45)
         self.declare_parameter('divisor', 3.0)
         self.declare_parameter('saturation', 10)
+        self.declare_parameter('cam_align', 0)
         
         # Get parameter values
         self.brightness = self.get_parameter('brightness').value
@@ -33,6 +34,7 @@ class LaneDetect(Node):
         self.multiplier_top = self.get_parameter('multiplier_top').value
         self.divisor = self.get_parameter('divisor').value
         self.saturation = self.get_parameter('saturation').value
+        self.cam_align = self.get_parameter('cam_align').value
         img_topic = self.get_parameter('image_topic').value
         if self.get_parameter('raw_image').value:
             self.sub1 = self.create_subscription(Image, img_topic, self.raw_listener, 10)
@@ -173,6 +175,10 @@ class LaneDetect(Node):
         self.kf.update(np.array([deque_center]))        # Update with the new measurement
         smoothed_center = self.kf.x[0]                  # Get the filtered (smoothed) center position
 
+        # Camera alignment
+        
+        smoothed_center += self.cam_align
+
         # Twist logic
 
         twist = Twist()
@@ -206,7 +212,7 @@ class LaneDetect(Node):
         
         # Combine the original image with the line image
         if self.debug:
-            combined_image = cv2.addWeighted(image, 0.5, line_image, 1, 1)
+            combined_image = cv2.addWeighted(image, 0.3, line_image, 1, 1)
         else: 
             combined_image = line_image
 
