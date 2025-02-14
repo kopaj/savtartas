@@ -10,9 +10,9 @@ import rclpy
 from collections import deque
 from filterpy.kalman import KalmanFilter
 
-#runde:   ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=30 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-40
+#runde:   ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=10 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-50
 #f1tenth: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.6 divisor:=7.5
-#munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=3.0
+#munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=5.0
 
 class LaneDetect(Node):
     def __init__(self):
@@ -98,7 +98,7 @@ class LaneDetect(Node):
         upper_white = np.array([180, self.saturation, 255], dtype=np.uint8)      #change saturation, so it only recognises lanes
         mask_white = cv2.inRange(hsv, lower_white, upper_white)
 
-        lower_yellow = np.array([20, 100, 100], dtype=np.uint8)
+        lower_yellow = np.array([20, 200, 100], dtype=np.uint8)
         upper_yellow = np.array([30, 255, 255], dtype=np.uint8)
         mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
@@ -146,8 +146,14 @@ class LaneDetect(Node):
                     if 0.1 < abs(slope) < 5.0:  # Filter based on slope
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
                         if x1 < check_center and x2 < check_center:                 # If the turn is so steep, that it enters the other side of the screen, we account for it here
+                            if slope < 0.2:
+                                x1 += width/(2*self.divisor)
+                                x2 += width/(2*self.divisor)
                             left_x.extend([x1, x2])
                         elif x1 > check_center and x2 > check_center:
+                            if slope < 0.2:
+                                x1 -= width/(2*self.divisor)
+                                x2 -= width/(2*self.divisor)
                             right_x.extend([x1, x2])
 
         # Calculating the center
@@ -163,7 +169,7 @@ class LaneDetect(Node):
             center = center + ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - left_avg)/width)))    # Adjust divisor to lane size
         elif right_x:
             right_avg = np.mean(right_x)
-            center = right_avg / 2
+            center = (right_avg - (width/self.divisor))/ 2
             center = center - ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - right_avg)/width)))   # Adjust divisor to lane size
 
         # Averaging the last few measured centers
@@ -174,10 +180,6 @@ class LaneDetect(Node):
         self.kf.predict()  # Prediction step
         self.kf.update(np.array([deque_center]))        # Update with the new measurement
         smoothed_center = self.kf.x[0]                  # Get the filtered (smoothed) center position
-
-        # Camera alignment
-        
-        smoothed_center += self.cam_align
 
         # Twist logic
 
@@ -191,13 +193,13 @@ class LaneDetect(Node):
         else:
             twist.linear.x = 0.2
             #   velocity (m/s)
-            twist.angular.z = -0.0025 * (smoothed_center - (width/2))
+            twist.angular.z = -0.0025 * ((smoothed_center + self.cam_align) - (width/2))
             #   angular velocity(rad/s)       turn left -> positive value, turn right -> negative value
             self.pub2.publish(twist)
 
         # Displaying center of lane using smoothed center
-        cv2.line(line_image, (int(smoothed_center), height), (int(smoothed_center), int(height * (self.multiplier_top + 0.1))), (255, 0, 0), 2)
-        cv2.circle(line_image, (int(smoothed_center), int(height * self.multiplier_top)), 10, (255, 0, 0), -1)
+        cv2.line(line_image, (int((smoothed_center)), height), (int((smoothed_center)), int(height * (self.multiplier_top + 0.1))), (255, 0, 0), 2)
+        cv2.circle(line_image, (int((smoothed_center)), int(height * self.multiplier_top)), 5, (255, 0, 0), -1)
 
         # Display the twist.angular.z value on the image and direction (left or right or straight)
 
