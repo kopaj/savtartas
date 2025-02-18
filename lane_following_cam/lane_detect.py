@@ -13,7 +13,7 @@ from filterpy.kalman import KalmanFilter
 #runde:   ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=10 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=9.0 cam_align:=-50
 #f1tenth: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.65 divisor:=9.0
 #munchen: ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=5.0
-
+#jkk:     ros2 launch lane_following_cam robot_compressed1.launch.py multiplier_bottom:=1.0 multiplier_top:=0.65 divisor:=5.0 islane:=false
 
 class LaneDetect(Node):
     def __init__(self):
@@ -28,6 +28,7 @@ class LaneDetect(Node):
         self.declare_parameter('divisor', 3.0)
         self.declare_parameter('saturation', 10)
         self.declare_parameter('cam_align', 0)
+        self.declare_parameter('islane', True)
         
         # Get parameter values
         self.brightness = self.get_parameter('brightness').value
@@ -36,6 +37,7 @@ class LaneDetect(Node):
         self.divisor = self.get_parameter('divisor').value
         self.saturation = self.get_parameter('saturation').value
         self.cam_align = self.get_parameter('cam_align').value
+        self.islane = self.get_parameter('islane').value
         img_topic = self.get_parameter('image_topic').value
         if self.get_parameter('raw_image').value:
             self.sub1 = self.create_subscription(Image, img_topic, self.raw_listener, 10)
@@ -63,6 +65,9 @@ class LaneDetect(Node):
         # For extra center smoothing
         self.center_history = deque(maxlen=3)           # Adjust smoothness
 
+        self.width = 640
+        self.height = 480
+
     def raw_listener(self, msg):
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -88,7 +93,7 @@ class LaneDetect(Node):
         # Publish the image
         self.pub1.publish(ros_image)
 
-    def detect_lanes(self, image): 
+    def lane_img(self, image):
         # Adjust brightness until lanes are visible
         imageBrightness = cv2.convertScaleAbs(image, alpha=1, beta=self.brightness)
         
@@ -111,25 +116,63 @@ class LaneDetect(Node):
         # Detect edges using Canny
         edges = cv2.Canny(gray, 75, 150)
         # Defining ROI
-        height, width = edges.shape
+        self.height, self.width = edges.shape
         mask = np.zeros_like(edges)
         
         polygon = np.array([[
-            (0, int(height * self.multiplier_bottom)),          #runde: 0.8     other: 1    
-            (width, int(height * self.multiplier_bottom)),
-            (width, int(height * self.multiplier_top)),              #big_track_munchen_only_camera_a.mcap: 0.45 f1tenth: 0.6 runde: 0.65
-            (0, int(height * self.multiplier_top))
+            (0, int(self.height * self.multiplier_bottom)),          #runde: 0.8     other: 1    
+            (self.width, int(self.height * self.multiplier_bottom)),
+            (self.width, int(self.height * self.multiplier_top)),              #big_track_munchen_only_camera_a.mcap: 0.45 f1tenth: 0.6 runde: 0.65
+            (0, int(self.height * self.multiplier_top))
         ]], np.int32)
         cv2.fillPoly(mask, polygon, 255)
         cropped_edges = cv2.bitwise_and(edges, mask)
+
+        return cropped_edges
+
+    def tube_img(self, image):
+        # Greyscale edge detection
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = cv2.convertScaleAbs(gray, alpha=10, beta=20)
+        gray = cv2.GaussianBlur(gray, (15, 19), 0)
+
+        edges = cv2.Canny(gray, 0, 50)
+        
+        # Defining ROI
+        self.height, self.width = edges.shape
+        mask = np.zeros_like(edges)
+        
+        polygon = np.array([[
+            (0, int(self.height * self.multiplier_bottom)),
+            (self.width, int(self.height * self.multiplier_bottom)),
+            (self.width, int(self.height * self.multiplier_top)),
+            (0, int(self.height * self.multiplier_top))
+        ]], np.int32)
+        cv2.fillPoly(mask, polygon, 255)
+        cropped_edges = cv2.bitwise_and(edges, mask)
+
+        # Post-process edges to close gaps and reduce noise
+        kernel = np.ones((3, 3), np.uint8)
+        final_edges = cv2.morphologyEx(cropped_edges, cv2.MORPH_CLOSE, kernel)
+        
+        return final_edges
+
+    def detect_lanes(self, image): 
+        
+        # Check if the image is a tube image
         # Detect lines using Hough transform
-        lines = cv2.HoughLinesP(cropped_edges, 1, np.pi / 180, 50, maxLineGap=50)
+        
+        if self.islane:
+            lines = cv2.HoughLinesP(self.lane_img(image), 1, np.pi / 180, 50, maxLineGap=50)
+        else:
+            lines = cv2.HoughLinesP(self.tube_img(image), 1, np.pi / 180, 50, maxLineGap=50)
+
         line_image = np.zeros_like(image)
         left_x = []
         right_x = []
 
         if len(self.center_history) == 0:
-            check_center = width / 2                            #Initializing a default value for center if the deque is empty
+            check_center = self.width / 2                            #Initializing a default value for center if the deque is empty
         else:
             deque_center = np.mean(self.center_history)         #If not, we calculate a center using the last few cennters
             
@@ -148,17 +191,17 @@ class LaneDetect(Node):
                         cv2.line(line_image, (x1, y1), (x2, y2), (0, 0, 255), 5)
                         if x1 < check_center and x2 < check_center:                 # If the turn is so steep, that it enters the other side of the screen, we account for it here
                             if slope < 0.2:
-                                x1 += width/(2*self.divisor)
-                                x2 += width/(2*self.divisor)
+                                x1 += self.width/(2*self.divisor)
+                                x2 += self.width/(2*self.divisor)
                             left_x.extend([x1, x2])
                         elif x1 > check_center and x2 > check_center:
                             if slope < 0.2:
-                                x1 -= width/(2*self.divisor)
-                                x2 -= width/(2*self.divisor)
+                                x1 -= self.width/(2*self.divisor)
+                                x2 -= self.width/(2*self.divisor)
                             right_x.extend([x1, x2])
 
         # Calculating the center
-        center = width / 2          # Default center
+        center = self.width / 2          # Default center
 
         if left_x and right_x:
             left_avg = np.mean(left_x)
@@ -166,12 +209,12 @@ class LaneDetect(Node):
             center = (left_avg + right_avg) / 2
         elif left_x:
             left_avg = np.mean(left_x)
-            center = (left_avg + width) / 2
-            center = center + ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - left_avg)/width)))    # Adjust divisor to lane size
+            center = (left_avg + self.width) / 2
+            center = center + ((self.width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - left_avg)/self.width)))    # Adjust divisor to lane size
         elif right_x:
             right_avg = np.mean(right_x)
-            center = (right_avg - (width/self.divisor))/ 2
-            center = center - ((width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - right_avg)/width)))   # Adjust divisor to lane size
+            center = (right_avg - (self.width/self.divisor))/ 2
+            center = center - ((self.width/self.divisor) * (5 * (1 - (self.divisor/10))) * (0.5 - (abs(center - right_avg)/self.width)))   # Adjust divisor to lane size
 
         # Averaging the last few measured centers
         self.center_history.append(center)
@@ -194,13 +237,13 @@ class LaneDetect(Node):
         else:
             twist.linear.x = 0.2
             #   velocity (m/s)
-            twist.angular.z = -0.0025 * ((smoothed_center + self.cam_align) - (width/2))
+            twist.angular.z = -0.0025 * ((smoothed_center + self.cam_align) - (self.width/2))
             #   angular velocity(rad/s)       turn left -> positive value, turn right -> negative value
             self.pub2.publish(twist)
 
         # Displaying center of lane using smoothed center
-        cv2.line(line_image, (int((smoothed_center)), height), (int((smoothed_center)), int(height * (self.multiplier_top + 0.1))), (255, 0, 0), 2)
-        cv2.circle(line_image, (int((smoothed_center)), int(height * self.multiplier_top)), 5, (255, 0, 0), -1)
+        cv2.line(line_image, (int((smoothed_center)), self.height), (int((smoothed_center)), int(self.height * (self.multiplier_top + 0.1))), (255, 0, 0), 2)
+        cv2.circle(line_image, (int((smoothed_center)), int(self.height * self.multiplier_top)), 5, (255, 0, 0), -1)
 
         # Display the twist.angular.z value on the image and direction (left or right or straight)
 

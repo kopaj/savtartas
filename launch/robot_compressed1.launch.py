@@ -11,6 +11,7 @@ def generate_launch_description():
         DeclareLaunchArgument('divisor', default_value='5.0'),
         DeclareLaunchArgument('saturation', default_value='10'),
         DeclareLaunchArgument('cam_align', default_value='0'),
+        DeclareLaunchArgument('islane', default_value='True'),
         
         Node(
             package='lane_following_cam',
@@ -24,7 +25,8 @@ def generate_launch_description():
                 'multiplier_top': LaunchConfiguration('multiplier_top'),
                 'divisor': LaunchConfiguration('divisor'),
                 'saturation': LaunchConfiguration('saturation'),
-                'cam_align': LaunchConfiguration('cam_align')
+                'cam_align': LaunchConfiguration('cam_align'),
+                'islane': LaunchConfiguration('islane')
             }],
         ),
     ])
