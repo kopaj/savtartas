@@ -171,7 +171,7 @@ class LaneDetect(Node):
         left_x = []
         right_x = []
 
-        if len(self.center_history) == 0:
+        if (len(self.center_history) == 0) or (self.center_history[-1] in range(-self.width, 2 * self.width)):
             check_center = self.width / 2                            #Initializing a default value for center if the deque is empty
         else:
             deque_center = np.mean(self.center_history)         #If not, we calculate a center using the last few cennters
