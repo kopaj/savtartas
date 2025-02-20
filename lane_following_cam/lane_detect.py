@@ -65,6 +65,7 @@ class LaneDetect(Node):
         # For extra center smoothing
         self.center_history = deque(maxlen=3)           # Adjust smoothness
 
+        #Default values
         self.width = 640
         self.height = 480
 
@@ -93,6 +94,7 @@ class LaneDetect(Node):
         # Publish the image
         self.pub1.publish(ros_image)
 
+    #Method to use, when dealing with lanes
     def lane_img(self, image):
         # Adjust brightness until lanes are visible
         imageBrightness = cv2.convertScaleAbs(image, alpha=1, beta=self.brightness)
@@ -172,7 +174,7 @@ class LaneDetect(Node):
         right_x = []
 
         if (len(self.center_history) == 0) or (self.center_history[-1] in range(-self.width, 2 * self.width)):
-            check_center = self.width / 2                            #Initializing a default value for center if the deque is empty
+            check_center = self.width / 2                       #Initializing a default value for center if the deque is empty
         else:
             deque_center = np.mean(self.center_history)         #If not, we calculate a center using the last few cennters
             
