@@ -70,20 +70,33 @@ ros2 launch lane_following_cam robot_compressed1.launch.py
 ~/ros2_ws/src/savtartas/shell/start_drivers.sh
 ```
 
-## Use ROS 2 bag (mcap)
+## Use ROS 2 bags (mcap)
 
-Link: [drive.google.com/drive/folders/181pcgmwZ5YjaCReB-aZJtW1JtxnJUaru?usp=sharing](https://drive.google.com/drive/folders/181pcgmwZ5YjaCReB-aZJtW1JtxnJUaru?usp=sharing)
+Link for bags: [https://1drv.ms/f/s!Ao2v58VBa73_a1e1dBA9IAPirxo?e=VeP7gE](https://1drv.ms/f/s!Ao2v58VBa73_a1e1dBA9IAPirxo?e=VeP7gE)
 
 ```r
 ros2 bag play runde_vdi_lausitz_1.mcap --loop
 ```
 
-This bag file contains `/camera/color/image_raw` topic, so easiest way to use is:
-
+```r
+ros2 bag play big_track_munchen_only_camera_a.mcap --loop
+```
+```r
+ros2 bag play filtered_bag.mcap_.mcap --loop
+```
+These bag files contain `/camera/color/image_raw` topic, so easiest way to use them is:
+**For runde:**
 ``` r
 ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=10 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-50
 ```
-
+**For big_track_munchen:**
+``` r
+ros2 launch lane_following_cam robot_compressed1.launch.py brightness:=-10 saturation:=10 multiplier_bottom:=1.0 multiplier_top:=0.45 divisor:=5.0
+```
+**For filtered_bag:**
+```r
+ros2 launch lane_following_cam robot_compressed1.launch.py multiplier_bottom:=1.0 multiplier_top:=0.65 divisor:=5.0 islane:=false
+```
 ## Displaying the lane detection using foxglove bridge
 
 ```r
