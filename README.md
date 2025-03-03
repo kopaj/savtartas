@@ -27,7 +27,8 @@ colcon build --packages-select lane_following_cam --symlink-install
 <details>
 <summary> Don't forget to source before ROS commands.</summary>
 
-``` bash
+``` bash![readme](https://github.com/user-attachments/assets/a306b813-e863-478f-b4dd-1a01c30e439b)
+
 source ~/ros2_ws/install/setup.bash
 ```
 </details>
@@ -82,3 +83,19 @@ This bag file contains `/camera/color/image_raw` topic, so easiest way to use is
 ``` r
 ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=10 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-50
 ```
+
+## Displaying the lane detection using foxglove bridge
+
+```r
+ros2 launch foxglove_bridge foxglove_bridge_launch.xml
+```
+
+It is recommended to loop the bag, using the -l parameter
+
+```r
+ros2 bag play runde_vdi_lausitz_1.mcap -l
+```
+This recording was made on the Runde mcap
+
+
+![readme](https://github.com/user-attachments/assets/b837cc85-3c19-4c08-9b2f-ddbe1032c89f)
