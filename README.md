@@ -84,7 +84,9 @@ ros2 bag play big_track_munchen_only_camera_a.mcap --loop
 ```r
 ros2 bag play filtered_bag.mcap_.mcap --loop
 ```
+
 These bag files contain `/camera/color/image_raw` topic, so easiest way to use them is:
+
 **For runde:**
 ``` r
 ros2 launch lane_following_cam example_bag.launch.py brightness:=125 saturation:=10 multiplier_bottom:=0.8 multiplier_top:=0.65 divisor:=7.5 cam_align:=-50
