@@ -64,13 +64,29 @@ ros2 launch lane_following_cam robot_compressed1.launch.py
 ```
 
 
-### Start the camera
-
+### There are aliases for the shell scripts 
+Start the camera
 ``` r 
-~/ros2_ws/src/savtartas/shell/start_drivers.sh
+start_drivers
 ```
+Start the lane detection
+``` r 
+start_lane
+```
+Shut down everything
+``` r 
+stop_all
+```
+<details>
+<summary> Don't forget to source them</summary>
 
-## Use ROS 2 bags (mcap)
+``` bash![readme](https://github.com/user-attachments/assets/a306b813-e863-478f-b4dd-1a01c30e439b)
+
+source ~/ros2_ws/src/savtartas/shell/$NAME.sh
+```
+</details>
+
+### Use ROS 2 bags (mcap)
 
 Link for bags: [https://1drv.ms/f/s!Ao2v58VBa73_a1e1dBA9IAPirxo?e=VeP7gE](https://1drv.ms/f/s!Ao2v58VBa73_a1e1dBA9IAPirxo?e=VeP7gE)
 
