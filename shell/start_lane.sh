@@ -13,3 +13,6 @@ then
 else
     echo -e "\e[41merror\e[0m lane already started"
 fi
+chmod +x ~/ros2_ws/src/savtartas/shell/start_lane.sh
+alias start_lane='~/ros2_ws/src/savtartas/shell/start_lane.sh'
+
