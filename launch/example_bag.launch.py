@@ -8,10 +8,18 @@ def generate_launch_description():
         DeclareLaunchArgument('brightness', default_value='-10'),
         DeclareLaunchArgument('multiplier_bottom', default_value='1.0'),
         DeclareLaunchArgument('multiplier_top', default_value='0.45'),
-        DeclareLaunchArgument('divisor', default_value='5.0'),
+        DeclareLaunchArgument('divisor', default_value='9.0'),
         DeclareLaunchArgument('saturation', default_value='10'),
         DeclareLaunchArgument('cam_align', default_value='0'),
         DeclareLaunchArgument('islane', default_value='True'),
+        DeclareLaunchArgument('wheelbase', default_value='0.33', 
+                              description='Robot tengelytavolsaga meterben'),
+        
+        DeclareLaunchArgument('lookahead_dist', default_value='0.8', 
+                              description='Eloretekintesi tavolsag meterben'),
+        
+        DeclareLaunchArgument('meters_per_pixel', default_value='0.002', 
+                              description='Pixel -> Meter kalibracios ertek'),
         
         Node(
             package='lane_following_cam',
@@ -26,7 +34,10 @@ def generate_launch_description():
                 'divisor': LaunchConfiguration('divisor'),
                 'saturation': LaunchConfiguration('saturation'),
                 'cam_align': LaunchConfiguration('cam_align'),
-                'islane': LaunchConfiguration('islane')
+                'islane': LaunchConfiguration('islane'),
+                'wheelbase': LaunchConfiguration('wheelbase'),
+                'lookahead_dist': LaunchConfiguration('lookahead_dist'),
+                'meters_per_pixel': LaunchConfiguration('meters_per_pixel')
             }],
         ),
     ])
