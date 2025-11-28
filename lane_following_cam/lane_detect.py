@@ -309,8 +309,8 @@ class LaneDetect(Node):
             # Visszaváltás pixelbe a megjelenítéshez
             viz_lateral_offset_px = target_point_3d[1] / self.meters_per_pixel
             # Mivel a Robot Y+ BALRA van, de a Kép X+ JOBBRA, ezért kivonjuk
-            target_pixel_x = int((self.width / 2) - viz_lateral_offset_px) 
-            target_pixel_y = int(self.height * 0.45) # Kicsit a horizont alatt
+            target_pixel_x = int((self.width / 2) - self.cam_align - viz_lateral_offset_px) 
+            target_pixel_y = int(self.height * self.multiplier_top) # Kicsit a horizont alatt
 
             # CLAMP LOGIKA (Sárga, ha kimegy, Zöld ha bent van)
             draw_x = max(10, min(target_pixel_x, self.width - 10))
@@ -319,7 +319,7 @@ class LaneDetect(Node):
 
             # Rajzolás
             cv2.circle(line_image, (draw_x, target_pixel_y), 10, color, -1)
-            cv2.line(line_image, (int(self.width/2), self.height), (draw_x, target_pixel_y), color, 2)
+            cv2.line(line_image, (int(self.width/2) - self.cam_align, self.height), (draw_x, target_pixel_y), color, 2)
             cv2.putText(line_image, f"Tgt:{target_pixel_x}", (draw_x-20, target_pixel_y-15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         self.pub2.publish(twist)
