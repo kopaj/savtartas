@@ -193,6 +193,29 @@ class LaneDetect(Node):
         final_edges = cv2.morphologyEx(cropped_edges, cv2.MORPH_CLOSE, kernel)
         return final_edges
 
+    def shutdown_node(self):
+        """
+        Biztonságos leállítási rutin: Nullázza a sebességet és a kormányzást.
+        """
+        self.get_logger().warn('LaneDetect node shutting down. Stopping motors...')
+        
+        # Létrehoz egy nulla sebességű parancsot
+        stop_cmd = Twist()
+        stop_cmd.linear.x = 0.0
+        stop_cmd.angular.z = 0.0
+        
+        # Üzenet küldése kétszer a hálózati biztonság érdekében
+        try:
+            # Első küldés
+            self.pub2.publish(stop_cmd)
+            # Várakozás a parancs feldolgozására
+            time.sleep(0.1) 
+            # Második küldés (garantálja, hogy megkapja a motorvezérlő node)
+            self.pub2.publish(stop_cmd)
+            self.get_logger().warn('Motors commanded to stop (Twist 0.0).')
+        except Exception as e:
+            self.get_logger().error(f"Hiba a Twist üzenet publikálásakor leállításkor: {e}")
+
     def detect_lanes(self, image): 
         # 1. ODOMETRIA RESET (Mivel bag file-t nézünk, minden képkocka "új kezdet")
         # Ha ezt nem teszed meg, a virtuális robot elmegy a világ végére, miközben a videó egy helyben áll!
@@ -346,13 +369,41 @@ class LaneDetect(Node):
         self.center_pub.publish(center_msg)
 
         return combined_image
-
+"""
 def main(args=None):
     rclpy.init(args=args)
     lane_detect = LaneDetect()
     rclpy.spin(lane_detect)
     lane_detect.destroy_node()
     rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+"""
+def main(args=None):
+    # ROS 2 inicializálása
+    rclpy.init(args=args)
+    node = LaneDetect()
+    
+    try:
+        # A Node futtatása, itt vár a Ctrl+C-re
+        rclpy.spin(node)
+        
+    except KeyboardInterrupt:
+        # Ctrl+C esetén a program ide ugrik
+        node.get_logger().info('Keyboard Interrupt received. Initiating shutdown.')
+        
+    finally:
+        # Ez a blokk mindig lefut, függetlenül attól, hogy a spin() hogyan fejeződött be
+        try:
+            # 1. Meghívja a biztonságos leállítást (nulla Twist)
+            node.shutdown_node()
+        except Exception as e:
+            node.get_logger().error(f"Hiba a shutdown_node-ban: {e}")
+            
+        # 2. A Node és a ROS 2 környezet leállítása
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
